@@ -20,7 +20,7 @@ BANNER_END_X = 0.81
 BANNER_END_Y = 0.65
 
 # ================= API CONFIG =================
-INFO_API_URL = "https://player-info-by-ckrpro.vercel.app/get"
+INFO_API_URL = "https://ob55-info-by-ckrpro.vercel.app/info"
 
 BASE64 = "aHR0cHM6Ly9jZG4uanNkZWxpdnIubmV0L2doL1NoYWhHQ3JlYXRvci9pY29uQG1haW4vUE5H"
 ICON_BASE_URL = base64.b64decode(BASE64).decode("utf-8")
@@ -65,34 +65,26 @@ app.add_middleware(
 def load_unicode_font(size, font_file=FONT_FILE):
     try:
         font_path = os.path.join(os.path.dirname(__file__), font_file)
-
         if os.path.exists(font_path):
             return ImageFont.truetype(font_path, size)
-
     except Exception as e:
         print(f"Font load error: {e}")
-
     return ImageFont.load_default()
 
 # ================= IMAGE FETCH =================
 async def fetch_image_bytes(item_id):
-    if not item_id or str(item_id) in ["0", "None", "null"]:
+    if not item_id or str(item_id) in ["0", "None", "null", ""]:
         print(f"DEBUG: Invalid image ID -> {item_id}")
         return None
 
     url = f"{ICON_BASE_URL}/{item_id}.png"
-
     try:
         response = await client.get(url)
-
         print(f"DEBUG: Fetch {url} -> {response.status_code}")
-
         if response.status_code == 200:
             return response.content
-
     except Exception as e:
         print(f"DEBUG: Image fetch error -> {e}")
-
     return None
 
 # ================= IMAGE CONVERTER =================
@@ -102,7 +94,6 @@ def bytes_to_image(img_bytes):
             return Image.open(io.BytesIO(img_bytes)).convert("RGBA")
         except Exception as e:
             print(f"DEBUG: Image decode error -> {e}")
-
     return Image.new("RGBA", (400, 400), (180, 180, 180, 255))
 
 # ================= TEXT DRAW =================
@@ -114,10 +105,8 @@ def is_cherokee(char):
 
 def draw_unicode_text(draw, x, y, text, font_main, font_alt, stroke):
     current_x = x
-
     for char in text:
         font = font_alt if is_cherokee(char) else font_main
-
         for dx in range(-stroke, stroke + 1):
             for dy in range(-stroke, stroke + 1):
                 draw.text(
@@ -126,14 +115,12 @@ def draw_unicode_text(draw, x, y, text, font_main, font_alt, stroke):
                     font=font,
                     fill="black"
                 )
-
         draw.text(
             (current_x, y),
             char,
             font=font,
             fill="white"
         )
-
         current_x += font.getlength(char)
 
 # ================= IMAGE PROCESS =================
@@ -149,7 +136,6 @@ def process_banner_image(data, avatar_bytes, banner_bytes):
 
     # ================= AVATAR PROCESS =================
     zoom_size = int(TARGET_HEIGHT * AVATAR_ZOOM)
-
     avatar_img = avatar_img.resize(
         (zoom_size, zoom_size),
         Image.LANCZOS
@@ -174,7 +160,6 @@ def process_banner_image(data, avatar_bytes, banner_bytes):
 
     if banner_width > 100 and banner_height > 100:
         banner_img = banner_img.rotate(3, expand=True)
-
         rotated_width, rotated_height = banner_img.size
 
         crop_left = rotated_width * BANNER_START_X
@@ -192,7 +177,6 @@ def process_banner_image(data, avatar_bytes, banner_bytes):
         )
 
     banner_width, banner_height = banner_img.size
-
     aspect_ratio = (
         banner_width / banner_height
         if banner_height > 0
@@ -200,7 +184,6 @@ def process_banner_image(data, avatar_bytes, banner_bytes):
     )
 
     new_banner_width = int(TARGET_HEIGHT * aspect_ratio * 2)
-
     banner_img = banner_img.resize(
         (new_banner_width, TARGET_HEIGHT),
         Image.LANCZOS
@@ -208,7 +191,6 @@ def process_banner_image(data, avatar_bytes, banner_bytes):
 
     # ================= FINAL CANVAS =================
     final_width = avatar_width + new_banner_width
-
     combined = Image.new(
         "RGBA",
         (final_width, TARGET_HEIGHT),
@@ -252,7 +234,6 @@ def process_banner_image(data, avatar_bytes, banner_bytes):
 
     # ================= LEVEL BOX =================
     level_text = f"Lvl.{level}"
-
     bbox = draw.textbbox(
         (0, 0),
         level_text,
@@ -264,7 +245,6 @@ def process_banner_image(data, avatar_bytes, banner_bytes):
 
     box_x1 = final_width - text_width - 60
     box_y1 = TARGET_HEIGHT - text_height - 50
-
     box_x2 = final_width
     box_y2 = TARGET_HEIGHT
 
@@ -283,11 +263,8 @@ def process_banner_image(data, avatar_bytes, banner_bytes):
 
     # ================= EXPORT =================
     output = io.BytesIO()
-
     combined.save(output, format="PNG")
-
     output.seek(0)
-
     return output
 
 # ================= MAIN ROUTE =================
@@ -304,7 +281,6 @@ async def get_profile(uid: str):
         response = await client.get(
             f"{INFO_API_URL}?uid={uid}"
         )
-
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -319,7 +295,6 @@ async def get_profile(uid: str):
 
     try:
         data = response.json()
-
     except Exception:
         raise HTTPException(
             status_code=500,
@@ -327,11 +302,10 @@ async def get_profile(uid: str):
         )
 
     # ================= DATA EXTRACTION =================
-    account = data.get("AccountInfo", {})
-    captain = data.get("captainBasicInfo", {})
-    guild = data.get("GuildInfo", {})
+    basic = data.get("BasicInformation", {})
+    guild = data.get("GuildInformation", {})
 
-    if not account:
+    if not basic:
         raise HTTPException(
             status_code=404,
             detail="Account not found"
@@ -339,13 +313,15 @@ async def get_profile(uid: str):
 
     # ================= IDS =================
     avatar_id = (
-        account.get("AccountAvatarId")
-        or captain.get("headPic")
+        basic.get("AvatarId") 
+        or basic.get("headPic") 
+        or basic.get("avatar")
     )
-
+    
     banner_id = (
-        account.get("AccountBannerId")
-        or captain.get("bannerId")
+        basic.get("BannerId") 
+        or basic.get("bannerId") 
+        or basic.get("banner")
     )
 
     print(
@@ -364,12 +340,8 @@ async def get_profile(uid: str):
 
     # ================= BANNER DATA =================
     banner_data = {
-        "AccountLevel": account.get("AccountLevel", "0"),
-        "AccountName": (
-            account.get("AccountName")
-            or captain.get("nickname")
-            or "Unknown"
-        ),
+        "AccountLevel": str(basic.get("Level", "0")),
+        "AccountName": basic.get("Name", "Unknown"),
         "GuildName": guild.get("GuildName", "")
     }
 
@@ -395,7 +367,6 @@ async def get_profile(uid: str):
 # ================= START SERVER =================
 if __name__ == "__main__":
     import uvicorn
-
     uvicorn.run(
         app,
         host="127.0.0.1",
